@@ -11,6 +11,10 @@ optimizer:
   lr: 1e-3
 criterion:
   _target_: torch.nn.BCEWithLogitsLoss
+early_stopper:
+  _target_: aemodes.utils.earlystopping.EarlyStopping
+  patience: 2
+  delta: 1e-4
 train:
   data_file: /scratch/gpfs/nc1514/specseg/data/samples_aza/co2_250_detector.pkl
   output_dir: 'outputs/test'

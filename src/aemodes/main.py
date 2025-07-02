@@ -12,10 +12,12 @@ def main(cfg: DictConfig):
     model = hydra.utils.instantiate(cfg.model)
     optimizer = hydra.utils.instantiate(cfg.optimizer, params=model.parameters())
     criterion = hydra.utils.instantiate(cfg.criterion)
+    early_stopper = hydra.utils.instantiate(cfg.early_stopper)
     train_model(
         model=model, 
         optimizer=optimizer,
         criterion=criterion,
+        early_stopper=early_stopper,
         cfg=cfg.train
         )
     # evaluate_model(cfg)

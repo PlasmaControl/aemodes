@@ -46,7 +46,7 @@ class ResidualBlock(nn.Module):
         return out
 
 
-def make_layer(block, in_channels, out_channels, blocks, stride=1,drop=0,dilation=1,bias=True):
+def make_layer(block, in_channels, out_channels, blocks, stride=1,drop=0.,dilation=1,bias=True):
     downsample = None
     if (stride != 1) or (in_channels != out_channels):
         downsample = nn.Sequential(
@@ -65,7 +65,10 @@ def make_layer(block, in_channels, out_channels, blocks, stride=1,drop=0,dilatio
 #======================1D===================#
 # Residual block
 class ResidualBlock1d(nn.Module):
-    def __init__(self, in_channels, out_channels, stride=1, downsample=None,bias=True):
+    def __init__(
+        self, in_channels, out_channels, 
+        stride=1, downsample=None, bias=True
+        ):
         super(ResidualBlock1d, self).__init__()
         self.out_channels=out_channels
         self.conv1 = conv1d(in_channels, out_channels, stride,bias=bias)
@@ -106,61 +109,57 @@ def conv1d(in_channels, out_channels, stride=1,bias=True,):
     return nn.Conv1d(in_channels, out_channels, kernel_size=3, stride=1,
                      padding=1, bias=bias)
 
-class FormatTrackerModel(nn.Module):
-    def __init__(self, hparams):
-        super(BaselineModel, self).__init__()
-        self.hparams = hparams
-        self.n_bins = 513#(self.hparams.n_fft//2)+1
+class FormantModel(nn.Module):
+    def __init__(
+        self,
+        enc_channels = [4, 8, 16],
+        dropout = 0.5,
+        bias = True,
+    ):
+        super(FormantModel, self).__init__()
 
-        self.enc = nn.Sequential(
-            # LambdaLayer(lambda x: x.unsqueeze(1)),
-            make_layer(ResidualBlock, in_channels=3, out_channels=16, blocks=1, stride=1,drop=self.hparams.dropout,bias=self.hparams.bias),
-            make_layer(ResidualBlock, in_channels=16, out_channels=32, blocks=1, stride=1,drop=self.hparams.dropout,bias=self.hparams.bias),
-            make_layer(ResidualBlock, in_channels=32, out_channels=64, blocks=1, stride=1,drop=self.hparams.dropout,bias=self.hparams.bias),
-            make_layer(ResidualBlock, in_channels=64, out_channels=32, blocks=1, stride=1,drop=self.hparams.dropout,bias=self.hparams.bias),
-            make_layer(ResidualBlock, in_channels=32, out_channels=16, blocks=1, stride=1,drop=self.hparams.dropout,bias=self.hparams.bias),
-            make_layer(ResidualBlock, in_channels=16, out_channels=1, blocks=1, stride=1,drop=self.hparams.dropout,bias=self.hparams.bias),
-            LambdaLayer(lambda x: x.squeeze(1)),
-            LambdaLayer(lambda x: x.transpose(1,2))
-        )
-            
-        self.f1_conv=nn.Sequential(make_layer_1d(ResidualBlock1d, in_channels=self.n_bins, out_channels=self.n_bins//4, blocks=self.hparams.f1_blocks, stride=1,drop=self.hparams.dropout,bias=self.hparams.bias1d),
-                        make_layer_1d(ResidualBlock1d, in_channels=self.n_bins//4, out_channels=self.n_bins, blocks=self.hparams.f1_blocks, stride=1,drop=self.hparams.dropout,bias=self.hparams.bias1d))
-        self.f2_conv=nn.Sequential(make_layer_1d(ResidualBlock1d, in_channels=self.n_bins, out_channels=self.n_bins//4, blocks=self.hparams.f2_blocks, stride=1,drop=self.hparams.dropout,bias=self.hparams.bias1d),
-                        make_layer_1d(ResidualBlock1d, in_channels=self.n_bins//4, out_channels=self.n_bins, blocks=self.hparams.f2_blocks, stride=1,drop=self.hparams.dropout,bias=self.hparams.bias1d))
-        self.f3_conv=nn.Sequential(make_layer_1d(ResidualBlock1d, in_channels=self.n_bins, out_channels=self.n_bins//4, blocks=self.hparams.f3_blocks, stride=1,drop=self.hparams.dropout,bias=self.hparams.bias1d),
-                        make_layer_1d(ResidualBlock1d, in_channels=self.n_bins//4, out_channels=self.n_bins, blocks=self.hparams.f3_blocks, stride=1,drop=self.hparams.dropout,bias=self.hparams.bias1d))
+        enc = []
+        for i in range(len(enc_channels)-1):
+            enc.append(make_layer(
+                ResidualBlock, 
+                in_channels=enc_channels[i], 
+                out_channels=enc_channels[i+1], 
+                blocks=1, 
+                stride=1, 
+                drop=dropout, 
+                bias=bias
+            ))
+        self.enc = nn.Sequential(*enc)
 
-        self.f4_conv=nn.Sequential(
-            make_layer_1d(ResidualBlock1d, in_channels=self.n_bins, out_channels=self.n_bins//4, blocks=2, stride=2,drop=self.hparams.dropout,bias=self.hparams.bias1d),
-            make_layer_1d(ResidualBlock1d, in_channels=self.n_bins//4, out_channels=5, blocks=2, stride=2,drop=self.hparams.dropout,bias=self.hparams.bias1d))
+        # self.f1_conv=nn.Sequential(
+        #     make_layer_1d(ResidualBlock1d, in_channels=self.n_bins, out_channels=self.n_bins//4, blocks=self.hparams.f1_blocks, stride=1,drop=self.hparams.dropout,bias=self.hparams.bias1d),
+        #     make_layer_1d(ResidualBlock1d, in_channels=self.n_bins//4, out_channels=self.n_bins, blocks=self.hparams.f1_blocks, stride=1,drop=self.hparams.dropout,bias=self.hparams.bias1d)
+        # )
+        # self.f2_conv=nn.Sequential(make_layer_1d(ResidualBlock1d, in_channels=self.n_bins, out_channels=self.n_bins//4, blocks=self.hparams.f2_blocks, stride=1,drop=self.hparams.dropout,bias=self.hparams.bias1d),
+        #                 make_layer_1d(ResidualBlock1d, in_channels=self.n_bins//4, out_channels=self.n_bins, blocks=self.hparams.f2_blocks, stride=1,drop=self.hparams.dropout,bias=self.hparams.bias1d))
+        # self.f3_conv=nn.Sequential(make_layer_1d(ResidualBlock1d, in_channels=self.n_bins, out_channels=self.n_bins//4, blocks=self.hparams.f3_blocks, stride=1,drop=self.hparams.dropout,bias=self.hparams.bias1d),
+        #                 make_layer_1d(ResidualBlock1d, in_channels=self.n_bins//4, out_channels=self.n_bins, blocks=self.hparams.f3_blocks, stride=1,drop=self.hparams.dropout,bias=self.hparams.bias1d))
+
+        # self.f4_conv=nn.Sequential(
+        #     make_layer_1d(ResidualBlock1d, in_channels=self.n_bins, out_channels=self.n_bins//4, blocks=2, stride=2,drop=self.hparams.dropout,bias=self.hparams.bias1d),
+        #     make_layer_1d(ResidualBlock1d, in_channels=self.n_bins//4, out_channels=5, blocks=2, stride=2,drop=self.hparams.dropout,bias=self.hparams.bias1d))
         
-        self.linear = nn.Linear(5010,2505)
-    def forward(self, spect):
-        spect = spect.permute(0,1,3,2)
-        h = self.enc(spect)
-        out1 = self.f4_conv(h)
+        # self.linear = nn.Linear(5010,2505)
         
-        return out1
-    
-class HyperParameters:
-    def __init__(self):
-        self.n_fft = 1024
-        self.dropout = 0.1
-        self.bias = True
-        self.bias1d = False
-        self.f1_blocks = 2
-        self.f2_blocks = 2
-        self.f3_blocks = 2
+    def forward(self, x):
+        x = self.enc(x)
+        # out1 = self.f4_conv(h)
+        
+        return x
     
 if __name__ == "__main__":
     import torchsummary
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    # hparams = HyperParameters()
-    model = BaselineModel().to(device)
     input_size = (4, 355, 128)
-    input_tensor = torch.randn(2, *input_size).to(device)
+    model = FormantModel().to(device)
     torchsummary.summary(model, input_size=input_size)
-    output = model(input_tensor)
-    print("Output shape:", output.shape)
+    input_tensor = torch.randn(2, *input_size).to(device)
+    with torch.no_grad(): output_tensor = model(input_tensor)
+    print("Input shape:", input_tensor.shape)
+    print("Output shape:", output_tensor.shape)

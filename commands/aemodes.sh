@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=train_co2
+#SBATCH --job-name=aemodes
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=3
@@ -10,7 +10,6 @@
 #SBATCH --error=logs/%A_%a.err
 
 module purge
-source /scratch/gpfs/nc1514/specseg/.venv/bin/activate
+source .venv/bin/activate
 
-srun python /scratch/gpfs/nc1514/specseg/projects/co2modes/main.py
-# srun python /scratch/gpfs/nc1514/specseg/projects/co2modes/evaluate.py
+srun python -m aemodes.main

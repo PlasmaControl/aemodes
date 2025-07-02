@@ -20,6 +20,7 @@ def train_model(
     model,
     optimizer,
     criterion,
+    early_stopper,
     cfg,
     ):
     
@@ -44,7 +45,6 @@ def train_model(
 
     # Model setup
     model.to(device)
-    early_stopper = EarlyStopping(patience=2, delta=1e-4)
 
     epochs = cfg.epochs
     losses = []
