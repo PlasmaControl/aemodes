@@ -1,3 +1,5 @@
+from .scripts.train import train_model
+
 import hydra
 from omegaconf import DictConfig, OmegaConf
 
@@ -7,7 +9,17 @@ from omegaconf import DictConfig, OmegaConf
     config_name="default",
     )
 def main(cfg: DictConfig):
-    print(cfg)
+    model = hydra.utils.instantiate(cfg.model)
+    optimizer = hydra.utils.instantiate(cfg.optimizer, params=model.parameters())
+    criterion = hydra.utils.instantiate(cfg.criterion)
+    train_model(
+        model=model, 
+        optimizer=optimizer,
+        criterion=criterion,
+        cfg=cfg.train
+        )
+    # evaluate_model(cfg)
+    # inference_model(cfg)
     return
 
 if __name__ == "__main__":

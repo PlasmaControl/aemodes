@@ -1,1 +1,19 @@
-data_file: /scratch/gpfs/nc1514/specseg/data/samples_aza/co2_250_detector.pkl
+model:
+  _target_: aemodes.models.baseline.BaselineModel
+  input_size: [4, 355, 128]
+  output_size: [355, 5]
+  kernel_size: 3
+  channels: [4, 8, 16, 32]
+  linear_hidden: 16
+  dropout_p: [0.5, 0.5, 0.5, 0.5]
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 1e-3
+criterion:
+  _target_: torch.nn.BCEWithLogitsLoss
+train:
+  data_file: /scratch/gpfs/nc1514/specseg/data/samples_aza/co2_250_detector.pkl
+  output_dir: 'outputs/test'
+  epochs: 50
+  batch_size: 32
+  num_workers: 3
