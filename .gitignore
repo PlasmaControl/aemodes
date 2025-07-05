@@ -210,3 +210,4 @@ __marimo__/
 *.pth
 outputs/
 logs/
+wandb/

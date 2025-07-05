@@ -1,0 +1,8 @@
+_target_: aemodes.models.baseline.BaselineModel
+params:
+  input_size: [4, 355, 128]
+  output_size: [355, 5]
+  kernel_size: 3
+  channels: [4, 8, 16, 32]
+  linear_hidden: 16
+  dropout_rate: 0.5

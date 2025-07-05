@@ -12,4 +12,4 @@
 module purge
 source .venv/bin/activate
 
-srun python -m aemodes.main
+srun python -m aemodes

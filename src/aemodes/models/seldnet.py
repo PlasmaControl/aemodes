@@ -1,86 +1,90 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-from torchvision.models.segmentation import lraspp_mobilenet_v3_large
-        
-class SELDNet(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.C = 4 # the number of audio channels
-        self.P = 63 # the number of feature maps
-        self.Q = 3 # the number of RNN hidden units
-        self.R = 32 # the dimension of first full connection
-        self.K = 5 # the number of classes
-        self.feature_dim = 512 # the dimension of input features
-        self.cnn_layers = 2 # the number of CNN layers
-        self.rnn_layers = 1 # the number of RNN layers
-        ##########################################
-        # CNN part
-        ##########################################
-        self.convs = [nn.Conv2d(in_channels=self.C,out_channels=self.P,
-                        kernel_size=(3,3),padding=(1,1))]
-        for _ in range(self.cnn_layers-1):
-            self.convs.append(
-                nn.Conv2d(in_channels=self.P,out_channels=self.P, 
-                          kernel_size=(3,3),padding=(1,1)))
+# roughly based on https://github.com/sharathadavanne/seld-net/blob/master/keras_model.py
 
-        # name all layers
-        for i, conv in enumerate(self.convs):
-            self.add_module(
-                "conv{}".format(i), 
-                conv)
-            self.add_module(
-                "bn{}".format(i), 
-                nn.BatchNorm2d(self.P, affine=False))
-
-
-        ##########################################
-        # RNN part
-        ##########################################
-        self.grus = nn.GRU(
-            input_size=self.P*3,
-            hidden_size=self.Q,
-            num_layers=self.rnn_layers,
-            batch_first=True,
-            bidirectional=True)
-        self.add_module("grus",self.grus)
-
-
-        ##########################################
-        # SED part
-        ##########################################
-        self.sed_fc0 = nn.Linear(2*self.Q,self.R)
-        self.sed_fc1 = nn.Linear(self.R,self.K)
-        self.add_module("sed_fc0",self.sed_fc0)
-        self.add_module("sed_fc1",self.sed_fc1)  
+def sample_params():
+    return {
+        'pool_sizes': [9, 8, 2],
+        'conv_channels': 64,
+        'dropout_rate': 0.0,
+        'nb_cnn2d_filt': 64,
+        'rnn_sizes': [128, 128],
+        'fnn_sizes': [128],
+    }
     
-    def forward(self,x):
-        # x = x.permute(0,1,3,2)
-        for i in range(self.cnn_layers):
-            y = F.relu(getattr(self,"conv{}".format(i))(x))
-            if i<self.cnn_layers-1:
-                y = F.max_pool2d(getattr(self,"bn{}".format(i))(y),kernel_size=(1,7))
-            else:
-                y = F.max_pool2d(getattr(self,"bn{}".format(i))(y),kernel_size=(1,5))
-            x = y
+class SELDNetModel(nn.Module):
+    def __init__(
+        self, 
+        input_size = (4, 355, 128),
+        output_size = (355, 5),
+        params = {},
+        ):
+        super().__init__()
 
-        y = y.permute(0,2,3,1)
-        y = y.contiguous().view(y.shape[0],y.shape[1],-1)
-        y, _ = self.grus(y)
-        y = torch.tanh(y)
+        conv = []
+        for pool_size in params['pool_sizes']:
+            conv.append(nn.LazyConv2d(
+                out_channels=params['nb_cnn2d_filt'],
+                kernel_size=(3,3), stride=1, padding=1,
+                ))
+            conv.append(nn.BatchNorm2d(params['conv_channels']))
+            conv.append(nn.ReLU(inplace=True))
+            conv.append(nn.MaxPool2d(
+                kernel_size=(1, pool_size), 
+                stride=1,
+                ceil_mode=True,
+                ))
+            conv.append(nn.Dropout(p=params['dropout_rate']))
+        self.conv = nn.Sequential(*conv)
 
-        y = self.sed_fc1(self.sed_fc0(y))
-        return y
+        rnn_sizes = []
+        rnn_sizes.append(
+            (input_size[-1] - sum(params['pool_sizes']) + len(params['pool_sizes'])
+            ) * params['nb_cnn2d_filt'])
+        rnn_sizes.extend(params['rnn_sizes'])
+        
+        rnn = []
+        for i in range(len(rnn_sizes) - 1):
+            rnn.append(torch.nn.GRU(
+                input_size=rnn_sizes[i], hidden_size=rnn_sizes[i+1],
+                batch_first=True, dropout=params['dropout_rate'], 
+                bidirectional=True
+                ))
+        self.rnn = nn.ModuleList(rnn)
+        self.tanh = nn.Tanh()
+        
+        fnn = []
+        for i in range(len(params['fnn_sizes']) - 1):
+            fnn.append(nn.Linear(params['fnn_sizes'][i], params['fnn_sizes'][i+1], bias=True))
+            fnn.append(nn.Dropout(p=params['dropout_rate']))
+        fnn.append(nn.Linear(params['fnn_sizes'][-1], output_size[1], bias=True))
+        self.fnn = nn.Sequential(*fnn)
+
+    def forward(self, x, vid_feat=None):
+        B, C, T, F = x.shape
+        x = self.conv(x)
+
+        B, C, W, H = x.shape
+        x = x.view(B, W, C*H)
+        for rnn in self.rnn:
+            (x, _) = rnn(x)
+            x = self.tanh(x)
+            x = x[:, :, x.shape[-1]//2:] * x[:, :, :x.shape[-1]//2]
+            
+        x = self.fnn(x)
+
+        return x
     
 if __name__ == "__main__":
     import torchsummary
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    # hparams = HyperParameters()
-    model = SELDNet().to(device)
     input_size = (4, 355, 128)
-    input_tensor = torch.randn(1, *input_size).to(device)
+    params = sample_params()
+    model = SELDNetModel(params=params).to(device)
     torchsummary.summary(model, input_size=input_size)
-    output = model(input_tensor)
-    print("Output shape:", output.shape)
+    input_tensor = torch.randn(2, *input_size).to(device)
+    with torch.no_grad(): output_tensor = model(input_tensor)
+    print("Input shape:", input_tensor.shape)
+    print("Output shape:", output_tensor.shape)

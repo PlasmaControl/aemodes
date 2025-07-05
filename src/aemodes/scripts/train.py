@@ -2,11 +2,6 @@ import numpy as np
 import pickle
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-import seaborn as sns
-sns.set_style("dark")
-plt.style.use('dark_background')
-
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -15,29 +10,41 @@ print(device)
 
 from ..utils.dataset import ShotDataset, load_dataset
 from ..utils import EarlyStopping
+from ..nn.loss import BCELoss, DiceLoss, MSELoss, TPRLoss, FPRLoss
+import hydra
 
 def train_model(
-    model,
-    optimizer,
-    criterion,
-    early_stopper,
     cfg,
-    ):
+    log_fn=None,
+    output_dir=None,
+):
     
+    # Load Configuration Objects
+    model = hydra.utils.instantiate(cfg.model)
+    optimizer = hydra.utils.instantiate(cfg.optimizer, params=model.parameters())
+    criterion = hydra.utils.instantiate(cfg.criterion)
+    early_stopper = hydra.utils.instantiate(cfg.early_stopper)
+    
+    valid_loss = {}
+    for name, loss in cfg.validation_loss.items():
+        valid_loss[name] = hydra.utils.get_class(loss)()
+    epoch_val_losses = {loss_name: 0. for loss_name, losses in valid_loss.items()}
+    avg_val_losses = {loss_name: 0. for loss_name, losses in valid_loss.items()}
+
     # Load dataset
-    train_dataset, valid_dataset = load_dataset(cfg.data_file)
+    train_dataset, valid_dataset = load_dataset(cfg.train.data_file)
     train_loader = DataLoader(
         train_dataset, 
-        batch_size=cfg.batch_size, 
-        num_workers=cfg.num_workers,
+        batch_size=cfg.train.batch_size,
+        num_workers=cfg.train.num_workers,
         shuffle=True,
         pin_memory=True,
         persistent_workers=True,
     )
     valid_loader = DataLoader(
         valid_dataset, 
-        batch_size=cfg.batch_size, 
-        num_workers=cfg.num_workers,
+        batch_size=cfg.train.batch_size, 
+        num_workers=cfg.train.num_workers,
         shuffle=False, 
         pin_memory=True,
         persistent_workers=True,
@@ -46,18 +53,12 @@ def train_model(
     # Model setup
     model.to(device)
 
-    epochs = cfg.epochs
-    losses = []
-    valid_losses = []
-    train_steps = []
-    valid_steps = []
     best_loss = float('inf')
 
-    output_dir = Path(cfg.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    loader_len = len(train_loader)
+    for epoch in range(cfg.train.epochs):
+        # Reset epoch_val_losses at the start of each epoch
+        epoch_val_losses = {loss_name: 0. for loss_name in valid_loss.keys()}
 
-    for epoch in range(epochs):
         # -------- training --------
         model.train()
         for idx, batch in enumerate(train_loader):
@@ -72,41 +73,36 @@ def train_model(
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
-            if idx % 5 == 0:
-                losses.append(loss.item())
-                train_steps.append(epoch * loader_len + idx)
+            if log_fn:
+                log_fn({"train_loss": loss.item()})
 
         # -------- validation --------
         model.eval()
-        val_epoch_losses = []
+
         with torch.no_grad():
             for vbatch in valid_loader:
                 vfeat  = vbatch['X'].to(device)
                 vlab   = vbatch['y'].to(device)
-                vpred  = model(vfeat)
-                vloss  = criterion(vpred, vlab)
-                val_epoch_losses.append(vloss.item())
 
-        avg_val_loss = float(np.mean(val_epoch_losses))
-        valid_losses.append(avg_val_loss)
-        valid_steps.append((epoch + 1) * loader_len)
+                for loss_name, loss_fn in valid_loss.items():
+                    vpred  = model(vfeat)
+                    vloss  = loss_fn(vpred, vlab)
+                    epoch_val_losses[loss_name] += vloss.item()
 
-        early_stopper(avg_val_loss)
+        for loss_name, losses in epoch_val_losses.items():
+            avg_val_losses[loss_name] = float(np.mean(losses))
 
-        # plot
-        plt.figure()
-        plt.plot(train_steps, losses, marker='o', label='train')
-        plt.plot(valid_steps, valid_losses, marker='x', label='valid')
-        plt.ylim(0, max(max(losses), max(valid_losses)) * 1.1)
-        plt.title(f'Epoch {epoch + 1} | val {avg_val_loss:.4f}')
-        plt.legend()
-        plt.savefig(output_dir / 'training_loss.png')
-        plt.close()
+        # Log validation metrics if log_fn is provided
+        if log_fn:
+            log_fn({f"val_loss_{loss_name}": avg_loss for loss_name, avg_loss in avg_val_losses.items()})
+
+        early_stopper(avg_val_losses["BCE"])  # Use BCE loss for early stopping
+
 
         # checkpoint
-        if avg_val_loss < best_loss:
-            best_loss = avg_val_loss
-            torch.save(model.state_dict(), output_dir / 'best_model.pth')
+        if avg_val_losses["BCE"] < best_loss:
+            best_loss = avg_val_losses["BCE"]
+            torch.save(model.state_dict(), output_dir / cfg.train.ckpt_file)
 
         if early_stopper.early_stop:
             print(f"Early stopping triggered at epoch {epoch + 1}")
