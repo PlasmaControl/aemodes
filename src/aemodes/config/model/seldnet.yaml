@@ -1,8 +1,0 @@
-_target_: aemodes.models.seldnet.SELDNetModel
-params:
-  pool_sizes: [9, 8, 2]
-  conv_channels: 64
-  dropout_rate: 0
-  nb_cnn2d_filt: 64
-  rnn_sizes: [128, 128]
-  fnn_sizes: [128]

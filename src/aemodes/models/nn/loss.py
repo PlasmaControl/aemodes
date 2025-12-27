@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torchmetrics
 
 class BCELoss(nn.BCEWithLogitsLoss):
     """Binary Cross Entropy Loss with logits."""
@@ -75,3 +76,16 @@ class FocalLoss(nn.Module):
         pt = torch.exp(-bce_loss)
         focal_loss = self.alpha * (1 - pt) ** self.gamma * bce_loss
         return focal_loss.mean()  # Average over the batch
+
+class AUROC(nn.Module):
+    """Area Under the Receiver Operating Characteristic Curve."""
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.auroc = torchmetrics.AUROC(
+            task='binary',
+            )
+        
+    def forward(self, input, target):
+        input = input.view(-1, input.shape[-1])
+        target = target.view(-1, target.shape[-1])
+        return self.auroc(input, target)
