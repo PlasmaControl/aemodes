@@ -1,4 +1,4 @@
-# Alfven Eigenmode Finder
+# Alfven Eigenmode Locator
 
 This repository contains the code for the Alfven Eigenmode localization in time, frequency, and space. Resulting models can be directly used in [TokEye](https://github.com/PlasmaControl/tokeye).
 
