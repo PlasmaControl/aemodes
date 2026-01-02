@@ -77,13 +77,14 @@ class SELDNetModel(nn.Module):
         return x
     
 if __name__ == "__main__":
-    import torchsummary
+    # uv run python -m aemodes.models.detection.seldnet
+    import torchinfo
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     input_size = (4, 355, 128)
     params = sample_params()
     model = SELDNetModel(params=params).to(device)
-    torchsummary.summary(model, input_size=input_size)
+    torchinfo.summary(model, input_size=input_size)
     input_tensor = torch.randn(2, *input_size).to(device)
     with torch.no_grad(): output_tensor = model(input_tensor)
     print("Input shape:", input_tensor.shape)
